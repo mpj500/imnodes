@@ -850,7 +850,7 @@ bool ShouldLinkSnapToPin(
     // The end pin must be in a different node
     if (start_pin.ParentNodeIdx == end_pin.ParentNodeIdx)
     {
-        return false;
+        // mpj500 - ignore this rule to enable self-feedback nodes // return false;
     }
 
     // The end pin must be of a different type
@@ -1555,6 +1555,58 @@ void DrawLink(ImNodesEditorContext& editor, const int link_idx)
         link_color = link.ColorStyle.Hovered;
     }
 
+   // mpj500 - hacky code for rendering links as transverse waveforms
+    auto p1 = cubic_bezier.P0;
+    auto p2 = cubic_bezier.P1;
+    auto p3 = cubic_bezier.P2;
+    auto p4 = cubic_bezier.P3;
+
+    int num_segments = 10;
+    float len = 0.0f;
+    float t_step = 1.0f / (float)num_segments;
+    ImVec2 p = p1;
+    for (int i_step = 1; i_step <= num_segments; i_step++)
+    {
+        ImVec2 q = ImBezierCubicCalc(p1, p2, p3, p4, t_step * i_step);
+        ImVec2 d = q - p;
+        p = q;
+        len += sqrtf(d.x*d.x+d.y*d.y);
+    }
+    
+    num_segments = int(len)/2;
+    if (len < 1) len = 1;
+    if (len > 800) len = 800;
+
+    static int tmpBuffSize = 0;
+    static float* tmpBuff = nullptr;
+
+    if (tmpBuffSize < num_segments)
+    {
+        tmpBuffSize = num_segments;
+        tmpBuff = (float*)realloc(tmpBuff, tmpBuffSize * 4);
+    }
+    void g_getSamplesFn(int id0, int node0, int id1, int node1, float* buff, int count);
+    g_getSamplesFn(start_pin.Id, start_pin.ParentNodeIdx, end_pin.Id, end_pin.ParentNodeIdx, tmpBuff, num_segments);
+
+    GImNodes->CanvasDrawList->PathLineTo(p1);
+    {
+        float t_step = 1.0f / (float)num_segments;
+        ImVec2 p = p1;
+        for (int i_step = 1; i_step <= num_segments; i_step++)
+        {
+            ImVec2 q = ImBezierCubicCalc(p1, p2, p3, p4, t_step * i_step);
+            ImVec2 d = q - p;
+            p = q;
+            float len = sqrtf(d.x*d.x+d.y*d.y);
+            float y = tmpBuff[i_step-1];
+            ImVec2 n = {d.y*y/len, -d.x*y/len};
+
+            GImNodes->CanvasDrawList->_Path.push_back(p + n);
+        }
+        GImNodes->CanvasDrawList->PathStroke(link_color, 0, GImNodes->Style.LinkThickness);
+    }
+
+    /*
 #if IMGUI_VERSION_NUM < 18000
     GImNodes->CanvasDrawList->AddBezierCurve(
 #else
@@ -1567,6 +1619,7 @@ void DrawLink(ImNodesEditorContext& editor, const int link_idx)
         link_color,
         GImNodes->Style.LinkThickness,
         cubic_bezier.NumSegments);
+    */
 }
 
 void BeginPinAttribute(
@@ -2252,18 +2305,6 @@ void EndNodeEditor()
         }
     }
 
-    // In order to render the links underneath the nodes, we want to first select the bottom draw
-    // channel.
-    GImNodes->CanvasDrawList->ChannelsSetCurrent(0);
-
-    for (int link_idx = 0; link_idx < editor.Links.Pool.size(); ++link_idx)
-    {
-        if (editor.Links.InUse[link_idx])
-        {
-            DrawLink(editor, link_idx);
-        }
-    }
-
     // Render the click interaction UI elements (partial links, box selector) on top of everything
     // else.
 
@@ -2333,6 +2374,15 @@ void EndNodeEditor()
 
     // Finally, merge the draw channels
     GImNodes->CanvasDrawList->ChannelsMerge();
+
+    // mpj500 - Render links on top of nodes
+    for (int link_idx = 0; link_idx < editor.Links.Pool.size(); ++link_idx)
+    {
+        if (editor.Links.InUse[link_idx])
+        {
+            DrawLink(editor, link_idx);
+        }
+    }
 
     // pop style
     ImGui::EndChild();      // end scrolling region
