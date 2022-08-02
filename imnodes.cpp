@@ -1574,8 +1574,8 @@ void DrawLink(ImNodesEditorContext& editor, const int link_idx)
     }
     
     num_segments = int(len)/2;
-    if (len < 1) len = 1;
-    if (len > 800) len = 800;
+    if (num_segments < 1) num_segments = 1;
+    if (num_segments > 800) num_segments = 800;
 
     static int tmpBuffSize = 0;
     static float* tmpBuff = nullptr;
